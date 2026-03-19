@@ -9,11 +9,14 @@ import { useDeck } from "./hooks/useDeck";
 import {
   bootstrapApp,
   buildMixAssistant,
+  checkStemsReady,
   importSpotifyLibrary,
+  onStemProgress,
   saveSpotifyConfig,
   scanMusicFolder,
+  separateStems,
 } from "./lib/tauri";
-import type { AppSnapshot, Track } from "./lib/types";
+import type { AppSnapshot, StemProgressEvent, Track } from "./lib/types";
 
 function normalize(value: string) {
   return value.trim().toLowerCase();
@@ -57,6 +60,8 @@ export default function App() {
   const [spotifyClientId, setSpotifyClientId] = useState("");
   const [spotifyRedirectUri, setSpotifyRedirectUri] = useState("http://127.0.0.1:8888/callback");
   const [spotifyAccessToken, setSpotifyAccessToken] = useState("");
+  const [stemsReady, setStemsReady] = useState(false);
+  const [stemProgress, setStemProgress] = useState<Map<string, StemProgressEvent>>(new Map());
 
   function applySnapshot(nextSnapshot: AppSnapshot) {
     startTransition(() => {
@@ -98,6 +103,30 @@ export default function App() {
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    void checkStemsReady()
+      .then(setStemsReady)
+      .catch(() => setStemsReady(false));
+  }, []);
+
+  useEffect(() => {
+    const unlisten = onStemProgress((event) => {
+      setStemProgress((current) => {
+        const next = new Map(current);
+        if (event.stage === "complete" || event.stage === "error") {
+          next.delete(event.track_id);
+        } else {
+          next.set(event.track_id, event);
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      void unlisten.then((fn) => fn());
     };
   }, []);
 
@@ -178,6 +207,18 @@ export default function App() {
     } catch (error) {
       console.error(error);
       setStatusLine("Spotify import failed.");
+    }
+  }
+
+  async function handleSeparateStems(trackId: string, stemCount: number) {
+    setStatusLine(`Separating stems (${stemCount}-stem mode)...`);
+
+    try {
+      const next = await separateStems(trackId, stemCount);
+      applySnapshot(next);
+    } catch (error) {
+      console.error(error);
+      setStatusLine(`Stem separation failed: ${error}`);
     }
   }
 
@@ -397,8 +438,11 @@ export default function App() {
               onLoadDeckA={(track) => loadDeck(track, "A")}
               onLoadDeckB={(track) => loadDeck(track, "B")}
               onSelectTrack={setSelectedTrackId}
+              onSeparateStems={handleSeparateStems}
               selectedTrackId={selectedTrackId}
               sortKey={sortKey}
+              stemProgress={stemProgress}
+              stemsReady={stemsReady}
               tracks={visibleTracks}
             />
           </div>

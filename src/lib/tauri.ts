@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
-import type { AppSnapshot, MixAssistantPayload, SpotifyConfigInput } from "./types";
+import type { AppSnapshot, MixAssistantPayload, StemProgressEvent, SpotifyConfigInput } from "./types";
 
 export function bootstrapApp() {
   return invoke<AppSnapshot>("bootstrap_app");
@@ -29,5 +30,22 @@ export function buildMixAssistant(
     deck_a_track_id: deckATrackId ?? null,
     deck_b_track_id: deckBTrackId ?? null,
     target_energy: targetEnergy ?? null,
+  });
+}
+
+export function checkStemsReady() {
+  return invoke<boolean>("check_stems_ready");
+}
+
+export function separateStems(trackId: string, stemCount: number) {
+  return invoke<AppSnapshot>("separate_stems", {
+    track_id: trackId,
+    stem_count: stemCount,
+  });
+}
+
+export function onStemProgress(callback: (event: StemProgressEvent) => void) {
+  return listen<StemProgressEvent>("stem-progress", (event) => {
+    callback(event.payload);
   });
 }

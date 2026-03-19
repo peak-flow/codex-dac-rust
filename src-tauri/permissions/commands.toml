@@ -24,3 +24,13 @@ commands.allow = ["scan_music_folder"]
 identifier = "allow-build-mix-assistant"
 description = "Enables the build_mix_assistant command."
 commands.allow = ["build_mix_assistant"]
+
+[[permission]]
+identifier = "allow-check-stems-ready"
+description = "Enables checking if demucs is available for stem separation."
+commands.allow = ["check_stems_ready"]
+
+[[permission]]
+identifier = "allow-separate-stems"
+description = "Enables on-demand stem separation via demucs."
+commands.allow = ["separate_stems"]

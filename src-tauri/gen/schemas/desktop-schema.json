@@ -177,10 +177,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Allows the app to scan folders, import Spotify metadata, and build AI mix guidance.\n#### This default permission set includes:\n\n- `allow-bootstrap-app`\n- `allow-save-spotify-config`\n- `allow-import-spotify-library`\n- `allow-scan-music-folder`\n- `allow-build-mix-assistant`",
+          "description": "Allows the app to scan folders, import Spotify metadata, and build AI mix guidance.\n#### This default permission set includes:\n\n- `allow-bootstrap-app`\n- `allow-save-spotify-config`\n- `allow-import-spotify-library`\n- `allow-scan-music-folder`\n- `allow-build-mix-assistant`\n- `allow-check-stems-ready`\n- `allow-separate-stems`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows the app to scan folders, import Spotify metadata, and build AI mix guidance.\n#### This default permission set includes:\n\n- `allow-bootstrap-app`\n- `allow-save-spotify-config`\n- `allow-import-spotify-library`\n- `allow-scan-music-folder`\n- `allow-build-mix-assistant`"
+          "markdownDescription": "Allows the app to scan folders, import Spotify metadata, and build AI mix guidance.\n#### This default permission set includes:\n\n- `allow-bootstrap-app`\n- `allow-save-spotify-config`\n- `allow-import-spotify-library`\n- `allow-scan-music-folder`\n- `allow-build-mix-assistant`\n- `allow-check-stems-ready`\n- `allow-separate-stems`"
         },
         {
           "description": "Enables the bootstrap_app command.",
@@ -193,6 +193,12 @@
           "type": "string",
           "const": "allow-build-mix-assistant",
           "markdownDescription": "Enables the build_mix_assistant command."
+        },
+        {
+          "description": "Enables checking if demucs is available for stem separation.",
+          "type": "string",
+          "const": "allow-check-stems-ready",
+          "markdownDescription": "Enables checking if demucs is available for stem separation."
         },
         {
           "description": "Enables the import_spotify_library command.",
@@ -211,6 +217,12 @@
           "type": "string",
           "const": "allow-scan-music-folder",
           "markdownDescription": "Enables the scan_music_folder command."
+        },
+        {
+          "description": "Enables on-demand stem separation via demucs.",
+          "type": "string",
+          "const": "allow-separate-stems",
+          "markdownDescription": "Enables on-demand stem separation via demucs."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

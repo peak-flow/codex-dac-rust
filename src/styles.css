@@ -647,3 +647,93 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Stem Separation ── */
+
+.stem-row td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.stem-cell {
+  padding-left: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stem-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.stem-actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.stem-trigger,
+.stem-toggle {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ccc;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stem-trigger:hover,
+.stem-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.stem-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.stem-menu button {
+  font-size: 0.6rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ccc;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stem-menu button:hover {
+  background: #ff7a18;
+  color: #fff;
+  border-color: #ff7a18;
+}
+
+.stem-progress {
+  font-size: 0.65rem;
+  color: #29f0b4;
+  font-weight: 600;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

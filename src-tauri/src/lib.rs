@@ -7,7 +7,9 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::Manager;
+use regex::Regex;
+use tauri::{Emitter, Manager};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use walkdir::WalkDir;
 
 #[derive(Default)]
@@ -125,6 +127,10 @@ struct Track {
     imported_from: Option<String>,
     year: Option<u16>,
     artwork_url: Option<String>,
+    stem_parent_id: Option<String>,
+    stem_type: Option<String>,
+    #[serde(default)]
+    stem_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -595,6 +601,9 @@ fn demo_track(
         imported_from: imported_from.map(str::to_string),
         year: Some(2024),
         artwork_url: None,
+        stem_parent_id: None,
+        stem_type: None,
+        stem_ids: Vec::new(),
     }
 }
 
@@ -806,6 +815,9 @@ fn extract_local_track(path: &Path) -> Track {
         imported_from: None,
         year: None,
         artwork_url: None,
+        stem_parent_id: None,
+        stem_type: None,
+        stem_ids: Vec::new(),
     }
 }
 
@@ -1388,6 +1400,9 @@ fn convert_spotify_track(track: SpotifyTrack, imported_from: Option<String>) -> 
             .as_ref()
             .and_then(|images| images.first())
             .map(|image| image.url.clone()),
+        stem_parent_id: None,
+        stem_type: None,
+        stem_ids: Vec::new(),
     }
 }
 
@@ -1503,6 +1518,273 @@ fn color_for_name(name: &str) -> String {
     COLORS[index].to_string()
 }
 
+#[derive(Clone, Serialize)]
+struct StemProgressEvent {
+    track_id: String,
+    percent: f32,
+    stage: String,
+}
+
+#[tauri::command]
+async fn check_stems_ready() -> Result<bool, String> {
+    let output = tokio::process::Command::new("uv")
+        .args(["run", "--with", "demucs", "python", "-c", "import demucs; print('ok')"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await;
+
+    match output {
+        Ok(result) => Ok(result.status.success()),
+        Err(_) => Ok(false),
+    }
+}
+
+#[tauri::command]
+async fn separate_stems(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedState>,
+    track_id: String,
+    stem_count: u8,
+) -> Result<AppSnapshot, String> {
+    if stem_count != 2 && stem_count != 4 {
+        return Err(String::from("stem_count must be 2 or 4"));
+    }
+
+    let (track_path, track_title) = {
+        let guard = state
+            .0
+            .lock()
+            .map_err(|_| String::from("State lock poisoned"))?;
+
+        let track = guard
+            .snapshot
+            .tracks
+            .iter()
+            .find(|track| track.id == track_id)
+            .ok_or_else(|| String::from("Track not found in library"))?;
+
+        if track.stem_parent_id.is_some() {
+            return Err(String::from("Cannot separate a track that is already a stem"));
+        }
+
+        let path = track
+            .path
+            .as_ref()
+            .ok_or_else(|| String::from("Track has no local file path. Only local audio files can be separated."))?
+            .clone();
+
+        (path, track.title.clone())
+    };
+
+    let source_path = PathBuf::from(&track_path);
+    if !source_path.exists() {
+        return Err(String::from("Source audio file no longer exists on disk"));
+    }
+
+    let source_dir = source_path
+        .parent()
+        .ok_or_else(|| String::from("Cannot determine parent directory of track"))?;
+    let file_stem = source_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| String::from("Cannot determine file name"))?
+        .to_string();
+
+    let stems_out_dir = source_dir.join("stems");
+    let expected_dir = stems_out_dir.join("htdemucs").join(&file_stem);
+
+    let expected_files: Vec<&str> = if stem_count == 2 {
+        vec!["vocals.wav", "no_vocals.wav"]
+    } else {
+        vec!["vocals.wav", "drums.wav", "bass.wav", "other.wav"]
+    };
+
+    let stems_cached = expected_dir.exists()
+        && expected_files
+            .iter()
+            .all(|name| expected_dir.join(name).exists());
+
+    if !stems_cached {
+        app.emit(
+            "stem-progress",
+            StemProgressEvent {
+                track_id: track_id.clone(),
+                percent: 0.0,
+                stage: String::from("running"),
+            },
+        )
+        .ok();
+
+        let mut cmd = tokio::process::Command::new("uv");
+        cmd.args([
+            "run", "--with", "demucs", "--with", "torch",
+            "python", "-m", "demucs",
+            "--out",
+        ]);
+        cmd.arg(stems_out_dir.as_os_str());
+
+        if stem_count == 2 {
+            cmd.arg("--two-stems=vocals");
+        }
+
+        cmd.arg(&track_path);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|error| {
+            format!("Failed to spawn demucs. Is uv installed? Error: {error}")
+        })?;
+
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| String::from("Failed to capture demucs stderr"))?;
+
+        let progress_re = Regex::new(r"(\d+)%").unwrap();
+        let progress_track_id = track_id.clone();
+        let progress_app = app.clone();
+
+        let reader_handle = tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Some(captures) = progress_re.captures(&line) {
+                    if let Ok(percent) = captures[1].parse::<f32>() {
+                        progress_app
+                            .emit(
+                                "stem-progress",
+                                StemProgressEvent {
+                                    track_id: progress_track_id.clone(),
+                                    percent,
+                                    stage: String::from("running"),
+                                },
+                            )
+                            .ok();
+                    }
+                }
+            }
+        });
+
+        let exit_status = child
+            .wait()
+            .await
+            .map_err(|error| format!("Demucs process error: {error}"))?;
+
+        let _ = reader_handle.await;
+
+        if !exit_status.success() {
+            app.emit(
+                "stem-progress",
+                StemProgressEvent {
+                    track_id: track_id.clone(),
+                    percent: 0.0,
+                    stage: String::from("error"),
+                },
+            )
+            .ok();
+
+            return Err(format!(
+                "Demucs exited with code {}",
+                exit_status.code().unwrap_or(-1)
+            ));
+        }
+    }
+
+    if !expected_dir.exists() {
+        return Err(String::from(
+            "Demucs completed but output directory was not created",
+        ));
+    }
+
+    let mut stem_tracks = Vec::new();
+
+    for stem_file in &expected_files {
+        let stem_path = expected_dir.join(stem_file);
+
+        if !stem_path.exists() {
+            continue;
+        }
+
+        let stem_name = stem_file.trim_end_matches(".wav");
+        let stem_label = match stem_name {
+            "no_vocals" => String::from("Instrumental"),
+            other => {
+                let mut chars = other.chars();
+                match chars.next() {
+                    Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                    None => other.to_string(),
+                }
+            }
+        };
+
+        let mut stem_track = extract_local_track(&stem_path);
+        stem_track.id = format!(
+            "stem-{}-{}",
+            stable_hash(&stem_path.to_string_lossy()),
+            stem_name
+        );
+        stem_track.title = format!("{} [{}]", track_title, stem_label);
+        stem_track.stem_parent_id = Some(track_id.clone());
+        stem_track.stem_type = Some(stem_name.to_string());
+        stem_track.source = TrackSource::Local;
+
+        stem_tracks.push(stem_track);
+    }
+
+    if stem_tracks.is_empty() {
+        return Err(String::from(
+            "No stem files were found after separation",
+        ));
+    }
+
+    let stem_track_ids = stem_tracks
+        .iter()
+        .map(|track| track.id.clone())
+        .collect::<Vec<_>>();
+
+    let mut guard = state
+        .0
+        .lock()
+        .map_err(|_| String::from("State lock poisoned"))?;
+
+    if let Some(parent) = guard
+        .snapshot
+        .tracks
+        .iter_mut()
+        .find(|track| track.id == track_id)
+    {
+        parent.stem_ids = stem_track_ids;
+    }
+
+    for stem in stem_tracks {
+        if !guard
+            .snapshot
+            .tracks
+            .iter()
+            .any(|existing| existing.id == stem.id)
+        {
+            guard.snapshot.tracks.push(stem);
+        }
+    }
+
+    guard.snapshot.status = format!("Stems separated for {track_title}.");
+    refresh_snapshot(&mut guard.snapshot, None, None, None);
+
+    app.emit(
+        "stem-progress",
+        StemProgressEvent {
+            track_id: track_id.clone(),
+            percent: 100.0,
+            stage: String::from("complete"),
+        },
+    )
+    .ok();
+
+    Ok(guard.snapshot.clone())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1512,7 +1794,9 @@ pub fn run() {
             save_spotify_config,
             import_spotify_library,
             scan_music_folder,
-            build_mix_assistant
+            build_mix_assistant,
+            check_stems_ready,
+            separate_stems
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {

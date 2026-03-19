@@ -8,4 +8,6 @@ permissions = [
   "allow-import-spotify-library",
   "allow-scan-music-folder",
   "allow-build-mix-assistant",
+  "allow-check-stems-ready",
+  "allow-separate-stems",
 ]

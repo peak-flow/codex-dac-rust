@@ -1,4 +1,6 @@
-import type { Track } from "../lib/types";
+import { useState } from "react";
+
+import type { StemProgressEvent, Track } from "../lib/types";
 
 export type SortKey = "title" | "artist" | "bpm" | "energy" | "key";
 
@@ -8,8 +10,11 @@ interface LibraryTableProps {
   onLoadDeckA: (track: Track) => void;
   onLoadDeckB: (track: Track) => void;
   onSelectTrack: (trackId: string) => void;
+  onSeparateStems: (trackId: string, stemCount: number) => void;
   selectedTrackId: string | null;
   sortKey: SortKey;
+  stemProgress: Map<string, StemProgressEvent>;
+  stemsReady: boolean;
   tracks: Track[];
 }
 
@@ -26,16 +31,55 @@ function formatDuration(value: number) {
   return `${minutes}:${seconds}`;
 }
 
+const STEM_BADGE_COLORS: Record<string, string> = {
+  vocals: "#ff7aa6",
+  drums: "#ff7a18",
+  bass: "#29f0b4",
+  other: "#88a8ff",
+  no_vocals: "#ffcd6f",
+};
+
 export function LibraryTable({
   deckATrackId,
   deckBTrackId,
   onLoadDeckA,
   onLoadDeckB,
   onSelectTrack,
+  onSeparateStems,
   selectedTrackId,
   sortKey,
+  stemProgress,
+  stemsReady,
   tracks,
 }: LibraryTableProps) {
+  const [expandedStems, setExpandedStems] = useState<Set<string>>(new Set());
+  const [stemMenuOpen, setStemMenuOpen] = useState<string | null>(null);
+
+  function toggleStems(trackId: string) {
+    setExpandedStems((current) => {
+      const next = new Set(current);
+      if (next.has(trackId)) {
+        next.delete(trackId);
+      } else {
+        next.add(trackId);
+      }
+      return next;
+    });
+  }
+
+  const stemTrackMap = new Map<string, Track[]>();
+  const parentTracks: Track[] = [];
+
+  for (const track of tracks) {
+    if (track.stem_parent_id) {
+      const siblings = stemTrackMap.get(track.stem_parent_id) ?? [];
+      siblings.push(track);
+      stemTrackMap.set(track.stem_parent_id, siblings);
+    } else {
+      parentTracks.push(track);
+    }
+  }
+
   return (
     <div className="panel library-panel">
       <div className="table-header">
@@ -61,11 +105,16 @@ export function LibraryTable({
             </tr>
           </thead>
           <tbody>
-            {tracks.map((track) => {
+            {parentTracks.map((track) => {
               const inDeckA = track.id === deckATrackId;
               const inDeckB = track.id === deckBTrackId;
+              const progress = stemProgress.get(track.id);
+              const hasStemChildren = track.stem_ids.length > 0;
+              const isExpanded = expandedStems.has(track.id);
+              const canSeparate = stemsReady && track.path !== null && !progress;
+              const childStems = stemTrackMap.get(track.id) ?? [];
 
-              return (
+              return [
                 <tr
                   key={track.id}
                   className={[
@@ -100,10 +149,111 @@ export function LibraryTable({
                       <button onClick={() => onLoadDeckB(track)} type="button">
                         B
                       </button>
+
+                      {hasStemChildren ? (
+                        <button
+                          className="stem-toggle"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleStems(track.id);
+                          }}
+                          type="button"
+                        >
+                          {isExpanded ? "▾" : "▸"} Stems
+                        </button>
+                      ) : canSeparate ? (
+                        <span className="stem-actions">
+                          <button
+                            className="stem-trigger"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setStemMenuOpen(stemMenuOpen === track.id ? null : track.id);
+                            }}
+                            type="button"
+                          >
+                            Stems
+                          </button>
+                          {stemMenuOpen === track.id && (
+                            <span className="stem-menu">
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setStemMenuOpen(null);
+                                  onSeparateStems(track.id, 2);
+                                }}
+                                type="button"
+                              >
+                                2-stem
+                              </button>
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setStemMenuOpen(null);
+                                  onSeparateStems(track.id, 4);
+                                }}
+                                type="button"
+                              >
+                                4-stem
+                              </button>
+                            </span>
+                          )}
+                        </span>
+                      ) : progress ? (
+                        <span className="stem-progress">
+                          {Math.round(progress.percent)}%
+                        </span>
+                      ) : null}
                     </div>
                   </td>
-                </tr>
-              );
+                </tr>,
+
+                ...(isExpanded
+                  ? childStems.map((stem) => (
+                      <tr
+                        key={stem.id}
+                        className={[
+                          "stem-row",
+                          stem.id === deckATrackId ? "in-deck-a" : "",
+                          stem.id === deckBTrackId ? "in-deck-b" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => onSelectTrack(stem.id)}
+                      >
+                        <td>
+                          <div className="track-cell stem-cell">
+                            <span
+                              className="stem-badge"
+                              style={{
+                                borderColor: STEM_BADGE_COLORS[stem.stem_type ?? ""] ?? "#888",
+                                color: STEM_BADGE_COLORS[stem.stem_type ?? ""] ?? "#888",
+                              }}
+                            >
+                              {(stem.stem_type ?? "stem").toUpperCase()}
+                            </span>
+                            <strong>{stem.title}</strong>
+                          </div>
+                        </td>
+                        <td />
+                        <td>{stem.bpm.toFixed(1)}</td>
+                        <td>{stem.musical_key}</td>
+                        <td>{Math.round(stem.energy * 100)}%</td>
+                        <td>{formatDuration(stem.duration_seconds)}</td>
+                        <td>stem</td>
+                        <td>
+                          <div className="load-actions">
+                            <button onClick={() => onLoadDeckA(stem)} type="button">
+                              A
+                            </button>
+                            <button onClick={() => onLoadDeckB(stem)} type="button">
+                              B
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  : []),
+              ];
             })}
           </tbody>
         </table>
@@ -111,4 +261,3 @@ export function LibraryTable({
     </div>
   );
 }
-

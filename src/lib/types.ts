@@ -24,6 +24,15 @@ export interface Track {
   imported_from: string | null;
   year: number | null;
   artwork_url: string | null;
+  stem_parent_id: string | null;
+  stem_type: string | null;
+  stem_ids: string[];
+}
+
+export interface StemProgressEvent {
+  track_id: string;
+  percent: number;
+  stage: string;
 }
 
 export interface Crate {
