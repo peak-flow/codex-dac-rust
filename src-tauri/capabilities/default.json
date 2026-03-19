@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-capability",
+  "description": "Default desktop capability for PulseGrid DJ",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "default"
+  ]
+}
+

@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Allows the app to scan folders, import Spotify metadata, and build AI mix guidance."
+permissions = [
+  "allow-bootstrap-app",
+  "allow-save-spotify-config",
+  "allow-import-spotify-library",
+  "allow-scan-music-folder",
+  "allow-build-mix-assistant",
+]
